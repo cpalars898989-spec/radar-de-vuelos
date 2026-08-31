@@ -1,0 +1,270 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Radar de vuelos</title>
+  <style>
+    :root {
+      --navy: #10265b;
+      --blue: #4361ee;
+      --yellow: #ffc83d;
+      --paper: #f4f7fc;
+      --ink: #101f48;
+      --muted: #62708e;
+      --line: #d8e0ef;
+      --green: #12996d;
+      --white: #ffffff;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      color: var(--ink);
+      background: var(--paper);
+      font-family: Inter, ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+    }
+    header {
+      color: var(--white);
+      background: var(--navy);
+      border-bottom: 5px solid var(--yellow);
+      padding: 26px clamp(22px, 5vw, 72px);
+    }
+    header small {
+      color: var(--yellow);
+      font-weight: 800;
+      letter-spacing: .16em;
+      text-transform: uppercase;
+    }
+    h1 { margin: 8px 0 2px; font-size: clamp(2rem, 5vw, 4rem); line-height: 1; }
+    header p { color: #cbd7f3; margin: 10px 0 0; }
+    main { max-width: 1220px; margin: auto; padding: 32px 22px 60px; }
+    .status { color: var(--muted); margin-bottom: 20px; }
+    .toolbar { display: flex; flex-wrap: wrap; gap: 10px; margin-bottom: 20px; }
+    button {
+      border: 2px solid var(--blue);
+      border-radius: 10px;
+      background: var(--white);
+      color: var(--blue);
+      cursor: pointer;
+      font: inherit;
+      font-weight: 800;
+      padding: 11px 16px;
+    }
+    button.primary { color: var(--navy); background: var(--yellow); border-color: var(--yellow); }
+    button:disabled { cursor: wait; opacity: .55; }
+    .route-manager { display: grid; grid-template-columns: minmax(220px, 1fr) 2fr; gap: 22px; align-items: end; }
+    .field { display: grid; gap: 7px; }
+    .route-form { display: grid; grid-template-columns: repeat(4, minmax(110px, 1fr)); gap: 10px; align-items: end; }
+    input, select {
+      width: 100%; border: 1px solid var(--line); border-radius: 9px; background: var(--white);
+      color: var(--ink); font: inherit; padding: 11px 12px;
+    }
+    .grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; }
+    .card {
+      background: var(--white);
+      border: 1px solid var(--line);
+      border-radius: 14px;
+      box-shadow: 0 8px 28px rgba(16, 38, 91, .06);
+      padding: 22px;
+    }
+    .card label { color: var(--muted); font-size: .78rem; font-weight: 800; letter-spacing: .09em; text-transform: uppercase; }
+    .metric { margin-top: 8px; font-size: 2rem; font-weight: 900; }
+    .route { color: var(--blue); }
+    .opportunity { color: var(--green); }
+    .wide { grid-column: 1 / -1; }
+    h2 { margin: 0 0 18px; font-size: 1.2rem; }
+    svg { width: 100%; height: 260px; overflow: visible; }
+    .axis { stroke: var(--line); stroke-width: 1; }
+    .curve { fill: none; stroke: var(--blue); stroke-width: 4; stroke-linecap: round; stroke-linejoin: round; }
+    .dot { fill: var(--yellow); stroke: var(--navy); stroke-width: 2; }
+    .empty { color: var(--muted); padding: 60px 0; text-align: center; }
+    table { width: 100%; border-collapse: collapse; }
+    th, td { border-bottom: 1px solid var(--line); padding: 13px 10px; text-align: left; }
+    th { color: var(--muted); font-size: .75rem; letter-spacing: .07em; text-transform: uppercase; }
+    .error { color: #a72a32; background: #fff0f1; border: 1px solid #f3c2c6; padding: 14px; border-radius: 10px; }
+    footer { color: var(--muted); text-align: center; padding: 25px; }
+    @media (max-width: 760px) {
+      .grid { grid-template-columns: 1fr; }
+      .wide { grid-column: auto; }
+      .table-wrap { overflow-x: auto; }
+      .route-manager, .route-form { grid-template-columns: 1fr; }
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <small>Monitoreo basado en evidencia</small>
+    <h1>Radar de vuelos</h1>
+    <p>Precios reales, memoria histórica y oportunidades visibles.</p>
+  </header>
+  <main>
+    <div id="status" class="status">Cargando radar…</div>
+    <div class="toolbar">
+      <button id="refreshApi" class="primary" type="button">Consultar precio ahora</button>
+      <button id="reloadData" type="button">Recargar histórico</button>
+    </div>
+    <section id="dashboard" class="grid" hidden>
+      <article class="card wide route-manager">
+        <div class="field">
+          <label for="routePicker">Ruta mostrada</label>
+          <select id="routePicker"></select>
+        </div>
+        <form id="routeForm" class="route-form">
+          <div class="field"><label for="origin">Origen</label><input id="origin" maxlength="3" pattern="[A-Za-z]{3}" placeholder="LIM" required></div>
+          <div class="field"><label for="destination">Destino</label><input id="destination" maxlength="3" pattern="[A-Za-z]{3}" placeholder="AQP" required></div>
+          <div class="field"><label for="target">Objetivo USD</label><input id="target" type="number" min="1" step="0.01" placeholder="80"></div>
+          <button class="primary" type="submit">Agregar ruta</button>
+        </form>
+      </article>
+      <article class="card">
+        <label>Ruta activa</label>
+        <div id="route" class="metric route">—</div>
+      </article>
+      <article class="card">
+        <label>Último precio</label>
+        <div id="latest" class="metric">—</div>
+      </article>
+      <article class="card">
+        <label>Promedio histórico</label>
+        <div id="average" class="metric">—</div>
+      </article>
+      <article class="card wide">
+        <h2>Evolución del precio</h2>
+        <div id="chart"></div>
+      </article>
+      <article class="card wide">
+        <h2>Observaciones guardadas</h2>
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>Consulta</th><th>Ruta</th><th>Precio</th><th>Aerolínea</th><th>Fecha de vuelo</th></tr></thead>
+            <tbody id="history"></tbody>
+          </table>
+        </div>
+      </article>
+    </section>
+  </main>
+  <footer>RADAR DE VUELOS · SQLite + Python + Telegram + Codex</footer>
+  <script>
+    const money = (value, currency = "USD") =>
+      new Intl.NumberFormat("es-PE", { style: "currency", currency: currency.toUpperCase() }).format(value);
+    let dashboardData = null;
+    let selectedRouteId = null;
+
+    function drawChart(prices) {
+      if (!prices.length) return '<div class="empty">Todavía no hay observaciones.</div>';
+      const width = 900, height = 230, pad = 32;
+      const values = prices.map(item => Number(item.precio));
+      const min = Math.min(...values), max = Math.max(...values);
+      const span = Math.max(max - min, 1);
+      const x = index => pad + index * ((width - pad * 2) / Math.max(prices.length - 1, 1));
+      const y = value => height - pad - ((value - min) / span) * (height - pad * 2);
+      const points = values.map((value, index) => `${x(index)},${y(value)}`).join(" ");
+      const dots = values.map((value, index) =>
+        `<circle class="dot" cx="${x(index)}" cy="${y(value)}" r="6"><title>${prices[index].fecha_consulta}: ${money(value, prices[index].moneda)}</title></circle>`
+      ).join("");
+      return `<svg viewBox="0 0 ${width} ${height}" role="img" aria-label="Evolución histórica de precios">
+        <line class="axis" x1="${pad}" y1="${height-pad}" x2="${width-pad}" y2="${height-pad}" />
+        <polyline class="curve" points="${points}" />${dots}
+      </svg>`;
+    }
+
+    function renderDashboard(data, message = "") {
+      const status = document.querySelector("#status");
+      dashboardData = data;
+      const activeRoutes = data.routes.filter(item => item.activa);
+      if (!activeRoutes.some(item => item.id === selectedRouteId)) selectedRouteId = activeRoutes[0]?.id ?? null;
+      const picker = document.querySelector("#routePicker");
+      picker.innerHTML = activeRoutes.map(item => `<option value="${item.id}">${item.origen} → ${item.destino}</option>`).join("");
+      if (selectedRouteId != null) picker.value = String(selectedRouteId);
+      const route = activeRoutes.find(item => item.id === selectedRouteId) || activeRoutes[0];
+      const latest = route?.ultimo;
+      const routePrices = route ? data.prices.filter(item => item.ruta_id === route.id) : [];
+      status.className = "status";
+      status.textContent = `${message ? `${message} · ` : ""}Actualizado: ${new Date(data.generated_at).toLocaleString("es-PE")}`;
+      document.querySelector("#route").textContent = route ? `${route.origen} → ${route.destino}` : "Sin rutas";
+      document.querySelector("#latest").textContent = latest ? money(latest.precio, latest.moneda) : "Sin datos";
+      document.querySelector("#average").textContent = route?.promedio != null ? money(route.promedio, latest?.moneda || "USD") : "Sin datos";
+      document.querySelector("#chart").innerHTML = drawChart(routePrices);
+      document.querySelector("#history").innerHTML = [...routePrices].reverse().map(item => `<tr>
+        <td>${item.fecha_consulta}</td><td>${item.origen} → ${item.destino}</td>
+        <td><strong>${money(item.precio, item.moneda)}</strong></td><td>${item.aerolinea}</td><td>${item.fecha_vuelo}</td>
+      </tr>`).join("") || '<tr><td colspan="5">Esta ruta todavía no tiene observaciones.</td></tr>';
+      document.querySelector("#dashboard").hidden = false;
+    }
+
+    async function loadDashboard(message = "") {
+      const status = document.querySelector("#status");
+      try {
+        const response = await fetch("/api/dashboard", { cache: "no-store" });
+        const data = await response.json();
+        if (!response.ok) throw new Error(data.error || `HTTP ${response.status}`);
+        renderDashboard(data, message);
+      } catch (error) {
+        status.className = "error";
+        status.textContent = `No se pudo cargar el panel: ${error.message}`;
+      }
+    }
+    async function addRoute(event) {
+      event.preventDefault();
+      const status = document.querySelector("#status");
+      const payload = {
+        origin: document.querySelector("#origin").value,
+        destination: document.querySelector("#destination").value,
+        target: document.querySelector("#target").value
+      };
+      try {
+        const response = await fetch("/api/routes", {
+          method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload)
+        });
+        const data = await response.json();
+        if (!response.ok) throw new Error(data.error || `HTTP ${response.status}`);
+        selectedRouteId = data.route.id;
+        event.target.reset();
+        const result = data.results[0];
+        const message = result?.alert_sent
+          ? "Ruta consultada y alerta enviada por Telegram"
+          : "Ruta agregada y precio consultado";
+        renderDashboard(data.dashboard, message);
+      } catch (error) {
+        status.className = "error";
+        status.textContent = `No se pudo agregar la ruta: ${error.message}`;
+      }
+    }
+    async function refreshApi() {
+      const button = document.querySelector("#refreshApi");
+      const status = document.querySelector("#status");
+      button.disabled = true;
+      status.className = "status";
+      status.textContent = "Consultando Travelpayouts…";
+      try {
+        const response = await fetch("/api/refresh", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ route_id: selectedRouteId })
+        });
+        const data = await response.json();
+        if (!response.ok) throw new Error(data.error || `HTTP ${response.status}`);
+        const result = data.results[0];
+        const action = result?.alert_sent
+          ? "Precio guardado y alerta enviada por Telegram"
+          : result?.action === "updated" ? "Observación de hoy actualizada" : "Nueva observación guardada";
+        await loadDashboard(action);
+      } catch (error) {
+        status.className = "error";
+        status.textContent = `No se pudo consultar el precio: ${error.message}`;
+      } finally {
+        button.disabled = false;
+      }
+    }
+    document.querySelector("#refreshApi").addEventListener("click", refreshApi);
+    document.querySelector("#reloadData").addEventListener("click", () => loadDashboard("Histórico recargado"));
+    document.querySelector("#routeForm").addEventListener("submit", addRoute);
+    document.querySelector("#routePicker").addEventListener("change", event => {
+      selectedRouteId = Number(event.target.value);
+      renderDashboard(dashboardData);
+    });
+    loadDashboard();
+  </script>
+</body>
+</html>
+
